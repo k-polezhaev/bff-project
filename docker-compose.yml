@@ -21,6 +21,13 @@ services:
       - "8083:8083"
     networks:
       - micro-net
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    networks:
+      - micro-net
 
   gateway:
     build: ./cmd/api-gateway
@@ -30,10 +37,12 @@ services:
       - USER_SERVICE_URL=http://user-service:8081
       - ORDER_SERVICE_URL=http://order-service:8082
       - PRODUCT_SERVICE_URL=http://product-service:8083
+      - REDIS_ADDR=redis:6379 
     depends_on:
       - user-service
       - order-service
       - product-service
+      - redis 
     networks:
       - micro-net
 
