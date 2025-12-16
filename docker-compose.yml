@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  user-service:
+    build: ./cmd/user-service
+    ports:
+      - "8081:8081"
+    networks:
+      - micro-net
+
+  order-service:
+    build: ./cmd/order-service
+    ports:
+      - "8082:8082"
+    networks:
+      - micro-net
+
+  product-service:
+    build: ./cmd/product-service
+    ports:
+      - "8083:8083"
+    networks:
+      - micro-net
+
+  gateway:
+    build: ./cmd/api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - USER_SERVICE_URL=http://user-service:8081
+      - ORDER_SERVICE_URL=http://order-service:8082
+      - PRODUCT_SERVICE_URL=http://product-service:8083
+    depends_on:
+      - user-service
+      - order-service
+      - product-service
+    networks:
+      - micro-net
+
+networks:
+  micro-net:
+    driver: bridge

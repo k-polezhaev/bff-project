@@ -1,0 +1,15 @@
+*.exe
+*.test
+*.prof
+
+*/app
+
+/vendor/
+/pkg/
+/bin/
+
+.idea/
+.vscode/
+
+db_data/
+docker_logs/
