@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -109,13 +109,13 @@ func (cb *CircuitBreaker) Execute(action func() (interface{}, error)) (interface
 
 		if cb.failureCount >= cb.threshold || cb.state == StateHalfOpen {
 			cb.state = StateOpen
-			log.Printf("!!! CB OPENED: Service failed %d times or failed recovery !!!", cb.failureCount)
+			slog.Warn("Circuit Breaker OPENED", "failures", cb.failureCount)
 		}
 		return nil, err
 	}
 
 	if cb.state == StateHalfOpen {
-		log.Println("!!! CB RECOVERED: System healthy again !!!")
+		slog.Info("Circuit Breaker RECOVERED")
 	}
 	cb.failureCount = 0
 	cb.state = StateClosed
@@ -143,7 +143,7 @@ func isRateLimited(ip string) bool {
 	_, err := pipe.Exec(ctx)
 
 	if err != nil {
-		log.Printf("Redis RateLimit error: %v", err)
+		slog.Error("Redis RateLimit error", "error", err)
 		return false
 	}
 
@@ -171,6 +171,7 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if isRateLimited(clientIP) {
+		slog.Warn("Rate limit exceeded", "ip", clientIP)
 		http.Error(w, `{"error": "Too many requests"}`, http.StatusTooManyRequests)
 		return
 	}
@@ -188,7 +189,8 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 
 	cachedData, err := rdb.Get(ctx, cacheKey).Bytes()
 	if err == nil {
-		log.Printf("Cache HIT for %s (%v)", id, time.Since(start))
+		slog.Info("Cache HIT", "user_id", id, "duration", time.Since(start))
+		
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(cachedData)
 		return
@@ -205,7 +207,7 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 
 	userErr = fetchJSON(fmt.Sprintf("%s/users/%s", userServiceURL, id), &user)
 	if userErr != nil {
-		log.Printf("Failed to get user: %v", userErr)
+		slog.Error("Failed to get user", "user_id", id, "error", userErr)
 		http.Error(w, "User not found or service unavailable", http.StatusNotFound)
 		return
 	}
@@ -216,7 +218,7 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 		defer wg.Done()
 		err := fetchJSON(fmt.Sprintf("%s/orders/user/%s", orderServiceURL, id), &orders)
 		if err != nil {
-			log.Printf("Orders fetch error: %v", err)
+			slog.Error("Orders fetch error", "user_id", id, "error", err)
 			orders = []Order{}
 		}
 	}()
@@ -227,7 +229,7 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 
 		err := fetchJSON(url, &products)
 		if err != nil {
-			log.Printf("Products error: %v", err)
+			slog.Error("Products error", "error", err)
 			products = []Product{}
 		}
 	}()
@@ -245,7 +247,7 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 		})
 
 		if err != nil {
-			log.Printf("Recommendations fallback (CB/Error): %v", err)
+			slog.Warn("Recommendations fallback (CB/Error)", "user_id", id, "error", err)
 			recommendations = []Product{}
 		} else {
 			recommendations = result.([]Product)
@@ -263,32 +265,37 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 
 	responseBytes, err := json.Marshal(response)
 	if err != nil {
+		slog.Error("JSON marshal error", "error", err)
 		http.Error(w, "JSON marshal error", http.StatusInternalServerError)
 		return
 	}
 
 	rdb.Set(ctx, cacheKey, responseBytes, 30*time.Second)
 
-	log.Printf("Request processed in %v", time.Since(start))
+	slog.Info("Request processed", "user_id", id, "duration", time.Since(start))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(responseBytes)
 }
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger) 
 	rdb = redis.NewClient(&redis.Options{
 		Addr: redisAddr,
 	})
 
 	if _, err := rdb.Ping(ctx).Result(); err != nil {
-		log.Fatalf("Redis connection failed: %v", err)
+		slog.Error("Redis connection failed", "error", err)
+		os.Exit(1)
 	}
-	log.Println("Connected to Redis")
+	slog.Info("Connected to Redis", "addr", redisAddr)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/profile/{id}", profileHandler)
 
-	log.Println("Gateway running on :8080")
+	slog.Info("Gateway running", "port", 8080)
 	if err := http.ListenAndServe(":8080", mux); err != nil {
-		log.Fatal(err)
+		slog.Error("Server shutdown error", "error", err)
+		os.Exit(1)
 	}
 }
