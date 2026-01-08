@@ -11,6 +11,9 @@ import (
 	"bff-project/internal/cache"
 	"bff-project/internal/config"
 	"bff-project/internal/services"
+	"bff-project/internal/telemetry"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -20,7 +23,6 @@ func main() {
 	cfg := config.NewConfig()
 	slog.Info("Starting API Gateway", "port", cfg.HTTPPort)
 
-	
 	redisClient, err := cache.NewClient(cfg.RedisAddr)
 	if err != nil {
 		slog.Error("Failed to connect to Redis", "error", err)
@@ -35,8 +37,13 @@ func main() {
 	authMiddleware := auth.NewMiddleware(cfg.JWTSecret)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/profile/{id}", authMiddleware.ValidateToken(handler.GetProfile))
+	
+	mux.Handle("GET /metrics", promhttp.Handler())
 
+	protectedHandler := authMiddleware.ValidateToken(handler.GetProfile)
+	monitoredHandler := telemetry.Middleware(protectedHandler)
+
+	mux.HandleFunc("GET /api/profile/{id}", monitoredHandler)
 	serverAddr := fmt.Sprintf(":%s", cfg.HTTPPort)
 	slog.Info("Server listening", "addr", serverAddr)
 	
