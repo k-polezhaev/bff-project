@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"bff-project/internal/api"
+	"bff-project/internal/auth"
 	"bff-project/internal/cache"
 	"bff-project/internal/config"
 	"bff-project/internal/services"
@@ -19,6 +20,7 @@ func main() {
 	cfg := config.NewConfig()
 	slog.Info("Starting API Gateway", "port", cfg.HTTPPort)
 
+	
 	redisClient, err := cache.NewClient(cfg.RedisAddr)
 	if err != nil {
 		slog.Error("Failed to connect to Redis", "error", err)
@@ -30,9 +32,10 @@ func main() {
 	serviceClient := services.NewServiceClient(cfg)
 
 	handler := api.NewHandler(serviceClient, redisClient)
+	authMiddleware := auth.NewMiddleware(cfg.JWTSecret)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/profile/{id}", handler.GetProfile)
+	mux.HandleFunc("GET /api/profile/{id}", authMiddleware.ValidateToken(handler.GetProfile))
 
 	serverAddr := fmt.Sprintf(":%s", cfg.HTTPPort)
 	slog.Info("Server listening", "addr", serverAddr)

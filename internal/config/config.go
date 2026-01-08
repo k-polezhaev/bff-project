@@ -11,6 +11,7 @@ type Config struct {
 	RecommendationServiceURL string
 	RedisAddr                string
 	HTTPPort                 string
+	JWTSecret                string
 }
 
 func NewConfig() *Config {
@@ -21,6 +22,7 @@ func NewConfig() *Config {
 		RecommendationServiceURL: getEnv("RECOMMENDATION_SERVICE_URL", "http://localhost:8084"),
 		RedisAddr:                getEnv("REDIS_ADDR", "localhost:6379"),
 		HTTPPort:                 getEnv("HTTP_PORT", "8080"),
+		JWTSecret:                getEnv("JWT_SECRET", "my-super-secret-key"),
 	}
 }
 

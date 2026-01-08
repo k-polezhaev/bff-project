@@ -28,17 +28,23 @@ func NewServiceClient(cfg *config.Config) *ServiceClient {
 }
 
 func (s *ServiceClient) fetchJSON(url string, target interface{}) error {
-	resp, err := s.client.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+	return resilience.Retry(3, 500*time.Millisecond, func() error {
+		resp, err := s.client.Get(url)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("bad status code: %d", resp.StatusCode)
-	}
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("server error: %d", resp.StatusCode)
+		}
+		
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("bad status code: %d", resp.StatusCode)
+		}
 
-	return json.NewDecoder(resp.Body).Decode(target)
+		return json.NewDecoder(resp.Body).Decode(target)
+	})
 }
 
 func (s *ServiceClient) GetUser(userID string) (*models.User, error) {
@@ -68,10 +74,11 @@ func (s *ServiceClient) GetProducts() ([]models.Product, error) {
 	return products, nil
 }
 
+
 func (s *ServiceClient) GetRecommendations(userID string) ([]models.Product, error) {
 	url := fmt.Sprintf("%s/recommendations/%s", s.cfg.RecommendationServiceURL, userID)
 
-	result, err := s.recommendationCB.Execute(func() (interface{}, error) {
+	result, err := s.recommendationCB.Execute(func() (any, error) {
 		var recs []models.Product
 		if err := s.fetchJSON(url, &recs); err != nil {
 			return nil, err

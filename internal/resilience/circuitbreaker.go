@@ -32,7 +32,7 @@ func NewCircuitBreaker(threshold int, timeout time.Duration) *CircuitBreaker {
 	}
 }
 
-func (cb *CircuitBreaker) Execute(action func() (interface{}, error)) (interface{}, error) {
+func (cb *CircuitBreaker) Execute(action func() (any, error)) (interface{}, error) {
 	cb.mu.Lock()
 
 	switch cb.state {
