@@ -1,51 +1,61 @@
 version: '3.8'
 
 services:
-  user-service:
-    build: ./cmd/user-service
-    ports:
-      - "8081:8081"
-    networks:
-      - micro-net
-
-  order-service:
-    build: ./cmd/order-service
-    ports:
-      - "8082:8082"
-    networks:
-      - micro-net
-
-  product-service:
-    build: ./cmd/product-service
-    ports:
-      - "8083:8083"
-    networks:
-      - micro-net
-  redis:
-    image: redis:7-alpine
-    command: redis-server --appendonly yes
-    ports:
-      - "6379:6379"
-    networks:
-      - micro-net
-
-  gateway:
-    build: ./cmd/api-gateway
+  api-gateway:
+    build:
+      context: .
+      dockerfile: cmd/api-gateway/Dockerfile
     ports:
       - "8080:8080"
     environment:
-      - USER_SERVICE_URL=http://user-service:8081
-      - ORDER_SERVICE_URL=http://order-service:8082
-      - PRODUCT_SERVICE_URL=http://product-service:8083
-      - REDIS_ADDR=redis:6379 
+      - REDIS_ADDR=redis:6379
+      - HTTP_PORT=8080
+      - JWT_SECRET=super-secret-key
+      - USER_SERVICE_URL=http://mock-service:8081
+      - ORDER_SERVICE_URL=http://mock-service:8082
+      - PRODUCT_SERVICE_URL=http://mock-service:8083
+      - RECOMMENDATION_SERVICE_URL=http://mock-service:8084
     depends_on:
-      - user-service
-      - order-service
-      - product-service
-      - redis 
+      - redis
     networks:
-      - micro-net
+      - bff-network
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - bff-network
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - bff-network
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
+    networks:
+      - bff-network
+
+  mock-service:
+    image: rodolpheche/wiremock
+    command: ["--verbose"]
+    ports:
+      - "8081:8080"
+      - "8082:8080"
+    networks:
+      - bff-network
 
 networks:
-  micro-net:
+  bff-network:
     driver: bridge
